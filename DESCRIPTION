@@ -1,11 +1,16 @@
 Package: SICZIPLN
-Title: What the Package Does (One Line, Title Case)
+Title: Variable selection in multivariate zero inflated Poisson Log-Normal Model
 Version: 0.0.0.9000
 Authors@R: 
-    person("First", "Last", , "first.last@example.com", role = c("aut", "cre"))
-Description: What the package does (one paragraph).
-License: `use_mit_license()`, `use_gpl3_license()` or friends to pick a
-    license
+    person("Togo Jean Yves", "KIOYE", , "kioyejeanyves@gmail.com", role = c("aut", "cre"),
+           comment = c(ORCID = "YOUR-ORCID-ID"))
+Description: This package allow to perform variable selection in multivariate  zero inflated Poisson Log-Normal (PLN) model. This implementation is based on combining an smoothing information criterion and a zero inflated PLN model.
+License: GPL (>= 3)
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
+LazyData: true
+Language: en, fr
+Suggests: 
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
