@@ -1,3 +1,8 @@
+Imports:
+    MASS,
+    PLNmodels,
+    parallel,
+    stats
 Package: SICZIPLN
 Title: Variable selection in multivariate zero inflated Poisson Log-Normal Model
 Version: 0.0.0.9000
