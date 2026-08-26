@@ -13,7 +13,8 @@ SICZIPLN(
   optim_method = "BFGS",
   max_it = 200,
   length_lambda = 100,
-  grid_search = FALSE
+  grid_search = FALSE,
+  initialisation_method = "LM"
 )
 }
 \arguments{

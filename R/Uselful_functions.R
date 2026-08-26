@@ -148,10 +148,14 @@ logit <- function(params) {
 #' # returns: 0 -100 -100 0 -100
 #'
 #' @export
-dirac <- function(params) {
+dirac_old <- function(params) {
   params[params == 0] <- 0
   params[params != 0] <- -100
   return(params)
+}
+dirac <- function(params) {
+  params[] <- ifelse(params == 0, 1, 0)
+  params
 }
 ####################################################################"
 #' Logarithm with Zero Handling
@@ -176,9 +180,9 @@ dirac <- function(params) {
 #'
 #' @export
 log_with_zero <- function(mat){
-     res_log <- log(mat)
-     res_log[res_log == -Inf] <- 0
-    return(res_log)
+  res_log <- log(mat)
+  res_log[res_log == -Inf] <- 0
+  return(res_log)
 }
 ##############################################################################
 #' Matrix Product with Infinite Value Handling
@@ -205,6 +209,8 @@ product_dirac <- function(mat1, mat2){
   prod_mat[prod_mat == -Inf] <- 0
   return(prod_mat)
 }
+#############################################
+
 #############################################
 #' Evidence Lower Bound for a Covariate-Dependent Zero-Inflated
 #' Poisson Log-Normal Model
@@ -249,7 +255,7 @@ product_dirac <- function(mat1, mat2){
 #' # )
 #'
 #' @export
-vloglik_col<-function(X,Y,O,B,Sigma,Pi,R,M,S,X_zero,B_zero){
+vloglik_col_old<-function(X,Y,O,B,Sigma,Pi,R,M,S,X_zero,B_zero){
   P<-R
   p<-ncol(Y)
   Omega<-solve(Sigma)
@@ -268,6 +274,49 @@ vloglik_col<-function(X,Y,O,B,Sigma,Pi,R,M,S,X_zero,B_zero){
     (nrow(Y)*p)/2
   elbo<-term1+term2+term3+term4
   return(elbo)
+}
+
+vloglik_col <- function(X, Y, O, B, Sigma, Pi, R, M, S, X_zero, B_zero) {
+  n <- nrow(Y)
+  p <- ncol(Y)
+
+  P  <- R
+  Q  <- 1 - P
+  S2 <- S^2
+  OM <- O + M
+  A  <- exp(OM + 0.5 * S2)
+
+  ## Cholesky unique : inverse + log-det de Sigma en une seule factorisation
+  cholSigma   <- chol(Sigma)
+  Omega       <- chol2inv(cholSigma)
+  logdetOmega <- -2 * sum(log(diag(cholSigma)))
+
+  ## term1 : trace(t(Q)%*%M1) = sum(Q*M1)
+  M1 <- Y * OM - A - logfactorial(Y)
+  term1 <- sum(Q * M1) + sum(diag(product_dirac(t(P), dirac(Y))))
+  # si product_dirac(A, B) n'est qu'un produit matriciel A %*% B, alors
+  # trace(t(P)%*%dirac(Y)) = sum(P * dirac(Y)), remplacer la ligne ci-dessus par:
+  # term1 <- sum(Q * M1) + sum(P * dirac(Y))
+
+  ## term2 : u_0 déjà donné directement
+  u_0 <- X_zero %*% B_zero
+  term2 <- sum(P * u_0) - sum(log_with_zero(1 + exp(u_0)))
+
+  ## term3
+  term3 <- -sum(P * log_with_zero(P)) - sum(Q * log_with_zero(Q))
+
+  ## term4
+  v    <- colSums(S2)
+  Res  <- M - X %*% B
+  ResO <- Res %*% Omega                       # O(n*p^2), au lieu de O(p^3)
+  trace_term <- sum(diag(Omega) * v) + sum(Res * ResO)
+
+  term4 <- 0.5 * sum(log_with_zero(S2)) +
+    (n / 2) * logdetOmega -
+    0.5 * trace_term +
+    (n * p) / 2
+
+  term1 + term2 + term3 + term4
 }
 #######################################################################
 #' Evidence Lower Bound for a Multivariate Zero-Inflated Poisson Log-Normal Model
@@ -303,7 +352,7 @@ vloglik_col<-function(X,Y,O,B,Sigma,Pi,R,M,S,X_zero,B_zero){
 #' # elbo <- vloglik(X, Y, O, B, Sigma, Pi, R, M, S)
 #'
 #' @export
-vloglik<-function(X,Y,O,B,Sigma,Pi,R,M,S){
+vloglik_old<-function(X,Y,O,B,Sigma,Pi,R,M,S){
   p<-ncol(Y)
   P<-R
   Omega<-solve(Sigma)
@@ -323,6 +372,47 @@ vloglik<-function(X,Y,O,B,Sigma,Pi,R,M,S){
     ( nrow(Y)*p)/2
   elbo<-term1+term2+term3+term4
   return(elbo)
+}
+vloglik <- function(X, Y, O, B, Sigma, Pi, R_ind, M, S) {
+  n <- nrow(Y)
+  p <- ncol(Y)
+
+  P  <- R_ind
+  Q  <- 1 - P
+  S2 <- S^2
+  OM <- O + M
+  A  <- exp(OM + 0.5 * S2)
+
+  ## Cholesky unique : Omega = Sigma^-1 ET log(det(Omega)), plus rapide/stable
+  cholSigma   <- chol(Sigma)
+  Omega       <- chol2inv(cholSigma)
+  logdetOmega <- -2 * sum(log(diag(cholSigma)))
+
+  ## term1 : trace(t(Q)%*%M1) = sum(Q*M1)
+  M1 <- Y * OM - A - logfactorial(Y)
+  term1 <- sum(Q * M1) + sum(diag(product_dirac(t(P), dirac(Y))))
+  # si product_dirac(A,B) fait juste A %*% B, remplacer la ligne au-dessus par :
+  # term1 <- sum(Q * M1) + sum(P * dirac(Y))
+
+  ## term2 : trace(t(P)%*%u0)=sum(P*u0) ; trace(t(I)%*%X)=sum(X)
+  u_0 <- matrix(log(Pi / (1 - Pi)), nrow = n, ncol = p, byrow = TRUE)
+  term2 <- sum(P * u_0) - sum(log_with_zero(1 + exp(u_0)))
+
+  ## term3 : trace(t(P)%*%f(P)) = sum(P*f(P))
+  term3 <- -sum(P * log_with_zero(P)) - sum(Q * log_with_zero(Q))
+
+  ## term4
+  v    <- colSums(S2)          # remplace t(rep(1,n)) %*% S2
+  Res  <- M - X %*% B          # calculé une seule fois
+  ResO <- Res %*% Omega        # O(n*p^2)
+  trace_term <- sum(diag(Omega) * v) + sum(Res * ResO)  # évite le O(p^3)
+
+  term4 <- 0.5 * sum(log_with_zero(S2)) +
+    (n / 2) * logdetOmega -
+    0.5 * trace_term +
+    (n * p) / 2
+
+  term1 + term2 + term3 + term4
 }
 ########################################################""
 #' Objective Function for the Variational E-Step
@@ -388,7 +478,7 @@ vloglik<-function(X,Y,O,B,Sigma,Pi,R,M,S){
 #'
 #' @export
 # R,M,S=params
-objective_E_step<-function(X,Y,O=O,params,B,Omega,X_zero,B_zero,lambda, epsilon){
+objective_E_step_a_supprimer<-function(X,Y,O=O,params,B,Omega,X_zero,B_zero,lambda, epsilon){
   n <- nrow(Y)
   p <- ncol(Y)
   d<-ncol(X)
@@ -424,6 +514,36 @@ objective_E_step<-function(X,Y,O=O,params,B,Omega,X_zero,B_zero,lambda, epsilon)
   # SIC_penalty[1,]<-0
   elbo<-elbo-(sum(SIC_penalty)-nb_params)
   return(-elbo)
+}
+objective_E_step <- function(X, Y, O, params, R, B, Omega, X_zero, B_zero, lambda, epsilon) {
+  n <- nrow(Y); p <- ncol(Y); d <- ncol(X)
+  M <- matrix(params[1:(n * p)], n, p)
+  S <- matrix(params[(n * p + 1):(2 * n * p)], n, p)
+  P <- R
+  S2 <- S^2
+  A <- exp(O + M + 0.5 * S2)
+  Q <- 1 - P
+
+  term1 <- sum(Q * (Y * (O + M) - A - logfactorial(Y))) + sum(P * dirac(Y))
+
+  u_0 <- X_zero %*% B_zero
+  term2 <- sum(P * u_0) - sum(log_with_zero(1 + exp(u_0)))
+  term3 <- -sum(P * log_with_zero(P) + Q * log_with_zero(Q))
+
+  Sbar <- colSums(S2)
+  resid <- M - X %*% B
+  term4 <- 0.5 * sum(log_with_zero(S2)) +
+    (n / 2) * log(det(Omega)) -
+    0.5 * (sum(diag(Omega) * Sbar) + sum((resid %*% Omega) * resid)) +
+    (n * p) / 2
+  SIC_penalty<-(lambda/2) *(B^2 / (B^2 + epsilon^2))
+  SIC_penalty[1,]<-0
+  nb_params<-(lambda/2)*((((p+1)*p)/2)+(p)+d*p+d)
+  elbo <- term1 + term2 + term3 + term4-sum(SIC_penalty)-nb_params
+  # nb_params <- (lambda / 2) * ((((p + 1) * p) / 2) + (p * d) + p)
+  # SIC_penalty <- (lambda / 2) * (B^2 / (B^2 + epsilon^2))
+  # -(elbo - (sum(SIC_penalty) - nb_params))
+  -(elbo)
 }
 ################################################################
 #' Gradient of the Variational E-Step Objective Function
@@ -478,7 +598,7 @@ objective_E_step<-function(X,Y,O=O,params,B,Omega,X_zero,B_zero,lambda, epsilon)
 #' # )
 #'
 #' @export
-grad_E_step <-function(X,Y,O=O,params,B,Omega,X_zero,B_zero,lambda, epsilon) {
+grad_E_step_a_supprimer <-function(X,Y,O=O,params,B,Omega,X_zero,B_zero,lambda, epsilon) {
   n <- nrow(Y)
   p <- ncol(Y)
   d<- ncol(X)
@@ -527,6 +647,58 @@ grad_E_step <-function(X,Y,O=O,params,B,Omega,X_zero,B_zero,lambda, epsilon) {
   # list(objective = objective, gradient = c(as.vector(grad_M), as.vector(grad_S)))
   gradient <- c(as.vector(grad_M), as.vector(grad_S),as.vector(grad_R))
   return(gradient)
+}
+
+grad_E_step <-function(X,Y,O=O,params,R,B,Omega,X_zero,B_zero,lambda, epsilon) {
+  n <- nrow(Y)
+  p <- ncol(Y)
+  d<- ncol(X)
+  Y <- as.matrix(Y) # réponses (n,p)
+
+  X <- as.matrix(X) # covariables (n,d)
+  # X<-X[,-2]
+  O <- as.matrix(O) # offsets (n,p)
+  X_zero<-as.matrix(X_zero)
+  # Recuperation des paramètres variationnels dan params
+
+  # params<-c(M,S,R)
+  M <- matrix(params[1:(nrow(Y)*p)],nrow(Y),p)  # (n,p)
+  S <-matrix(params[(nrow(Y)*p+1):((nrow(Y)*p)+(nrow(Y)*p))],nrow(Y),p)
+  # R<-matrix(params[((nrow(Y)*p)+(nrow(Y)*p)+1):length(params)],nrow(Y),p)
+  S2<-S^2
+  A<-exp(O+M+0.5*S2)
+  P<-R#(1/(1+exp(A+X_zero%*%B_zero)))*dirac(Y)#
+
+  # B<-matrix(params[1:(d*p)],d,p)
+  # matrix(params_init_E_step[(n*p+1):length(params_init_E_step)],n,p)
+  # Omega<-matrix(params[((d*p)+1):((d*p)+(p*p))],p,p)
+  B<-B
+  # Omega<-matrix(params[((d*p)+1):((d*p)+(p*p))],p,p)
+  Omega <-Omega
+  # Sigma<-((Omega))
+  n <- nrow(Y)
+  p <- ncol(Y)
+  d<-ncol(X)
+  # M <- matrix(prams_vec_E_step[1:(n * p)], n, p)
+  # S <- matrix(prams_vec_E_step[(n * p + 1):(n * p + n * p)], n, p)
+  # S2 <- S^2
+  Pi=(1/(1+exp(-X_zero%*%B_zero)))
+
+  # Omega<-solve(Sigma)
+  # nSigma <- t(M) %*% (M * w) + diag(w %*% S2)
+  # SIC_penalty<-lambda * sum(beta^2 / (beta^2 + a^2))
+  # objective <- sum(w * (A - Y * Z - 0.5 * log(S2))) + 0.5 * sum(diag(Omega %*% nSigma))+SIC_penalty
+  I_n_p<-matrix(1,nrow =nrow(Y),ncol = ncol(Y))
+  u_0<-X_zero%*%B_zero#logit(Pi)
+  grad_M <- ((I_n_p-P)*(Y-A)-(M-X%*%B)%*%Omega)
+
+  grad_S <-  ((1/S)-(I_n_p-P)*S*A-S*rep(1,nrow(Y))%*% t(diag(Omega)))
+
+  # grad_R <- (P*(A+u_0-logit(P))-log_with_zero(1-P))
+
+  # list(objective = objective, gradient = c(as.vector(grad_M), as.vector(grad_S)))
+  gradient <-  c(as.vector(grad_M), as.vector(grad_S))#c(as.vector(grad_M), as.vector(grad_S),as.vector(grad_R))
+  return(-gradient)
 }
 #######################################################################
 #' Objective Function for the Variational M-Step
@@ -587,7 +759,7 @@ grad_E_step <-function(X,Y,O=O,params,B,Omega,X_zero,B_zero,lambda, epsilon) {
 #' # )
 #'
 #' @export
-objective_M_step<-function(X,Y,O=O,paramsM,Omega,M,S,R,X_zero,lambda, epsilon){
+objective_M_step_a_supprimer<-function(X,Y,O=O,paramsM,Omega,M,S,R,X_zero,lambda, epsilon){
   n <- nrow(Y)
   p <- ncol(Y)
   d<-ncol(X)
@@ -628,6 +800,71 @@ objective_M_step<-function(X,Y,O=O,paramsM,Omega,M,S,R,X_zero,lambda, epsilon){
   SIC_penalty[1,]<-0
   elbo<-elbo-(sum(SIC_penalty)-nb_params)
   return(-elbo)
+}
+
+objective_M_step <- function(X, Y, O, paramsM, Omega,B, M, S, R, X_zero, lambda, epsilon) {
+  n <- nrow(Y); p <- ncol(Y); d <- ncol(X)
+  B_zero <- matrix(paramsM, d, p)
+  # B_zero<- matrix(paramsM[1:(d*p)],d,p)
+
+  B<-B#matrix(paramsM[((d*p)+1):length(paramsM)],d,p)
+  P <- R
+  Q <- 1 - P
+  S2 <- S^2
+  A <- exp(O + M + 0.5 * S2)
+
+  term1 <- sum(Q * (Y * (O + M) - A - logfactorial(Y))) + sum(P * dirac(Y))
+
+  u_0 <- X_zero %*% B_zero
+  term2 <- sum(P * u_0) - sum(log_with_zero(1 + exp(u_0)))
+  term3 <- -sum(P * log_with_zero(P) + Q * log_with_zero(Q))
+
+  Sbar <- colSums(S2)
+  resid <- M - X %*% B
+  term4 <- 0.5 * sum(log_with_zero(S2)) +
+    (n / 2) * log(det(Omega)) -
+    0.5 * (sum(diag(Omega) * Sbar) + sum((resid %*% Omega) * resid)) +
+    (n * p) / 2
+
+  elbo <- term1 + term2 + term3 + term4
+  # nb_params <- (lambda / 2) * ((((p + 1) * p) / 2) + (p * d) + p)
+  # SIC_penalty <- (lambda / 2) * (B^2 / (B^2 + epsilon^2))
+  # SIC_penalty[1, ] <- 0
+  # -(elbo - (sum(SIC_penalty) - nb_params))
+  -(elbo)
+}
+objective_M_step_with_grad_B <- function(X, Y, O, paramsM, Omega, M, S, R, X_zero, lambda, epsilon) {
+  n <- nrow(Y); p <- ncol(Y); d <- ncol(X)
+  B_zero <-matrix(paramsM[((d*p)+1):length(paramsM)],d,p)# matrix(paramsM, d, p)
+  # B_zero<- matrix(paramsM[1:(d*p)],d,p)
+
+  B<-matrix(paramsM[1:(d*p)],d,p) #B
+  P <- R
+  Q <- 1 - P
+  S2 <- S^2
+  A <- exp(O + M + 0.5 * S2)
+
+  term1 <- sum(Q * (Y * (O + M) - A - logfactorial(Y))) + sum(P * dirac(Y))
+
+  u_0 <- X_zero %*% B_zero
+  term2 <- sum(P * u_0) - sum(log_with_zero(1 + exp(u_0)))
+  term3 <- -sum(P * log_with_zero(P) + Q * log_with_zero(Q))
+
+  Sbar <- colSums(S2)
+  resid <- M - X %*% B
+  term4 <- 0.5 * sum(log_with_zero(S2)) +
+    (n / 2) * log(det(Omega)) -
+    0.5 * (sum(diag(Omega) * Sbar) + sum((resid %*% Omega) * resid)) +
+    (n * p) / 2
+  SIC_penalty<-(lambda/2) *(B^2 / (B^2 + epsilon^2))
+  SIC_penalty[1,]<-0
+  nb_params<-(lambda/2)*((((p+1)*p)/2)+(p)+d*p+d)
+  elbo <- term1 + term2 + term3 + term4-sum(SIC_penalty)-nb_params
+  # nb_params <- (lambda / 2) * ((((p + 1) * p) / 2) + (p * d) + p)
+  # SIC_penalty <- (lambda / 2) * (B^2 / (B^2 + epsilon^2))
+  # SIC_penalty[1, ] <- 0
+  # -(elbo - (sum(SIC_penalty) - nb_params))
+  (-elbo)
 }
 ###############################################################"
 #' Gradient of the Variational M-Step Objective Function
@@ -694,7 +931,7 @@ objective_M_step<-function(X,Y,O=O,paramsM,Omega,M,S,R,X_zero,lambda, epsilon){
 #' # )
 #'
 #' @export
-grad_M_step <- function(X,Y,O=O,paramsM,Omega,M,S,R,X_zero,lambda, epsilon) {
+grad_M_step_a_supprimer <- function(X,Y,O=O,paramsM,Omega,M,S,R,X_zero,lambda, epsilon) {
   n <- nrow(Y)
   p <- ncol(Y)
   d<-ncol(X)
@@ -739,6 +976,153 @@ grad_M_step <- function(X,Y,O=O,paramsM,Omega,M,S,R,X_zero,lambda, epsilon) {
   gradient_M <- c(as.vector(grad_B),as.vector(grad_B_zero))
   return(gradient_M)
 }
+
+grad_M_step <- function(X,Y,O=O,paramsM,Omega,B,M,S,R,X_zero,lambda, epsilon) {
+  n <- nrow(Y)
+  p <- ncol(Y)
+  d<-ncol(X)
+  Y <- as.matrix(Y) # réponses (n,p)
+  X <- as.matrix(X) # covariables (n,d)
+  # X<-X[,-2]
+
+  O <- as.matrix(O)#matrix(0,n,p) # offsets (n,p)
+
+  # Paramètres variationnels
+  M<-M
+  S<-S
+  R<-R
+
+  # Les paramètres qui seront mise à jour après l'étape E de façon analytique
+
+  B<-B
+  Omega<-Omega
+
+  I_n_p<-matrix(1,nrow = nrow(Y),ncol = ncol(Y))
+  # Recuperation des paramètres du modèle dans params
+  # params<-c(M,S,R)
+  # B <- matrix(paramsM[1:(d*p)],d,p)  # (n,p)
+
+  B_zero<-matrix(paramsM,d,p)  # matrix(paramsM[((d*p)+1):length(paramsM)],d,p)
+  Pi=(1/(1+exp(-X_zero%*%B_zero)))
+  P<-R
+  # Sigma<-((Omega))
+  S2<-S^2
+  A<-exp(O+M+0.5*S2)
+  u_0<-X_zero%*%B_zero
+
+
+  # Grad B
+  # grad_B <-((t(X)%*%X%*%B%*%Omega)-t(X)%*%M%*%Omega +SIC_deriv)
+  S2_bar<-diag(c(t(rep(1,nrow(Y)))%*%S2))
+
+  # Grad Omega
+  # grad_Omega <-((nrow(Y)/2)*(Omega)-(1/2)*(t(M-X%*%B)%*%(M-X%*%B)+S2_bar))
+
+  # Grad B_zero
+  grad_B_zero<-(t(X_zero)%*%P-t(X_zero)%*%(exp(u_0)/(1+exp(u_0))))
+  gradient_M <-  as.vector(grad_B_zero)
+
+  #c(as.vector(grad_B),as.vector(grad_B_zero))
+  return(-gradient_M)
+}
+# B n'est pas mis à jour analytiquement
+grad_M_step_with_grad_B  <- function(X,Y,O=O,paramsM,Omega,M,S,R,X_zero,lambda, epsilon) {
+  n <- nrow(Y)
+  p <- ncol(Y)
+  d<-ncol(X)
+  Y <- as.matrix(Y) # réponses (n,p)
+  X <- as.matrix(X) # covariables (n,d)
+  # X<-X[,-2]
+
+  O <- as.matrix(O)#matrix(0,n,p) # offsets (n,p)
+
+  # Paramètres variationnels
+  M<-M
+  S<-S
+  R<-R
+
+  # Les paramètres qui seront mise à jour après l'étape E de façon analytique
+
+  # B<-B
+  Omega<-Omega
+
+  I_n_p<-matrix(1,nrow = nrow(Y),ncol = ncol(Y))
+  # Recuperation des paramètres du modèle dans params
+  # paramsM<-c(B,B_zero)
+   B <- matrix(paramsM[1:(d*p)],d,p)  # (n,p)
+
+  B_zero<- matrix(paramsM[((d*p)+1):length(paramsM)],d,p) # matrix(paramsM,d,p)  #
+  Pi=(1/(1+exp(-X_zero%*%B_zero)))
+  P<-R
+  # Sigma<-solve((Omega))
+  S2<-S^2
+  A<-exp(O+M+0.5*S2)
+  u_0<-X_zero%*%B_zero
+
+
+  # Grad B
+  #  lambda<-2000
+  # epsilon<-0.00001
+  SIC_deriv<-(lambda/2) * (2*(B*epsilon^2) / (B^2 + epsilon^2)^2)
+  SIC_deriv[1,]<-0
+  # déjà gradient de -elbo ?
+  grad_B <-((t(X)%*%X%*%B%*%Omega)-t(X)%*%M%*%Omega +SIC_deriv)
+  S2_bar<-diag(c(t(rep(1,nrow(Y)))%*%S2))
+
+  # Grad Omega
+  # grad_Omega <-((nrow(Y)/2)*(Omega)-(1/2)*(t(M-X%*%B)%*%(M-X%*%B)+S2_bar))
+
+  # Grad B_zero
+  grad_B_zero<-(t(X_zero)%*%P-t(X_zero)%*%(exp(u_0)/(1+exp(u_0))))
+  gradient_M <-  c( c(grad_B), -c(grad_B_zero))
+
+  #c(as.vector(grad_B),as.vector(grad_B_zero))
+  return(gradient_M)
+}
+
+####################################################################
+# Initialisation ZIPLN
+#' Helper function for ZIPLN initialization.
+#'
+#' @description
+#' Fast LM-based starting point for ZIPLN: one multivariate `lm.fit` for the PLN
+#' component and empirical zero rates / binomial GLMs for the ZI component.
+#' Replaces the previous per-species `pscl::zeroinfl` loop.
+#'
+#' @param Y Response count matrix (n × p)
+#' @param X Design matrix for the PLN component (n × d)
+#' @param X0 Design matrix for the ZI component (n × d0, empty `matrix(NA,0,0)` when unused)
+#' @param O Offset matrix in log-scale (n × p)
+#' @param w Weight vector of length n (defaults to uniform weights)
+#' @return Named list: `B` (d × p), `M` (n × p), `S2` (n × p), `R` (n × p), `B0` (d0 × p)
+#'
+#' @importFrom stats lm.fit glm.fit binomial PLNmodels
+#' @export
+compute_ZIPLN_starting_point <- function(Y, X, X0, O, w = NULL) {
+  if (is.null(w)) w <- rep(1.0, nrow(Y))
+  n <- nrow(Y); p <- ncol(Y); d0 <- ncol(X0)
+  if (ncol(X) == 0) stop("PLN component requires at least one covariate (or an intercept) to fit ZIPLN.")
+
+  ## PLN component: fast multivariate LM (identical to compute_PLN_starting_point "LM")
+  sp <- PLNmodels::compute_PLN_starting_point(Y, X, O, w)
+
+  ## ZI component: empirical per-species zero rates
+  zero_ind <- (Y == 0) * 1.0
+  R <- matrix(colMeans(zero_ind), n, p, byrow = TRUE)
+
+  ## B0: p binomial GLMs on zero indicator vs X0 (only for "covar" ziparam where d0 > 0)
+  B0 <- if (!is.null(d0) && d0 > 0) {
+    binom_fam <- binomial()
+    vapply(seq_len(p), function(j)
+      suppressWarnings(glm.fit(X0, zero_ind[, j], family = binom_fam))$coefficients,
+      numeric(d0))
+  } else {
+    matrix(0.0, 0L, p)
+  }
+
+  list(B = sp$B, M = sp$M, S = sp$S, R = R, B0 = B0)
+}
+####################################################################
 ##########################################################################
 #' Optimization of the SIC-ZIPLN Model via Variational EM
 #'
@@ -822,10 +1206,10 @@ SICZIPLN_optim<-function(X,Y,X_zero,offset=FALSE,lambda_fixed=log(n)*(ncol(X)),o
   X<-model.matrix(~.,as.data.frame(X))
   X_zero<-model.matrix(~.,as.data.frame(X_zero))
 
-  # Offset_mat<-matrix(0,n,p)
-  res_PLN<-ZIPLN_init <- ZIPLN(Y~X[,-1]+offset(O[,1])|X_zero[,-1], zi = "col")
-  # PLN(Abundance~.-Offset+offset((O[,1])),data=prep_pln,control=PLN_param(backend = "nlopt",config_optim=list(algorithm="LBFGS",maxeval=1000)))
-
+  # Initialisation ZIPLN
+   res_PLN<-ZIPLN_init <- ZIPLN(Y~X[,-1]+offset(O[,1])|X_zero[,-1], zi = "col")
+  #
+  #
   B<-res_PLN$model_par$B
   Omega<-res_PLN$model_par$Omega
   Sigma<-res_PLN$model_par$Sigma
@@ -837,15 +1221,29 @@ SICZIPLN_optim<-function(X,Y,X_zero,offset=FALSE,lambda_fixed=log(n)*(ncol(X)),o
   X<-as.matrix(X)
   X_zero<-as.matrix(X_zero)
   Y<-as.matrix(Y)
-
-  # X_zero<-X_zero[,-1]
-  # X<-X[,-1]
   d<-ncol(X)
   n<-nrow(Y)
-  # B<-matrix(0.5,d,p)
-  # param_initpln=param_init(variables =X[,-1],abondance =Y,offset= matrix(0,ncol=ncol(Y),nrow=nrow(Y)))
-  # formatp=format_plnnew(abondance=Y,covariables=X,B_reg=param_initpln$B,Sigma =diag(1,p) ,M_reg=param_initpln$M,S_reg=param_initpln$S,O = matrix(0,ncol=ncol(Y),nrow=nrow(Y)),w =rep(1,nrow(Y)))
-  # params_init_E_step<-c(as.vector(param_initpln$M),as.vector(param_initpln$S))
+
+  #Initialisation avec starting point de ZIPLN
+  # res_init_ZI<-compute_ZIPLN_starting_point(Y=Y, X=X, X0=X_zero, O=O, w = NULL)
+  # B<-res_init_ZI$B
+  #
+  # # Omega<-res_PLN$model_par$Omega
+  # # Sigma<-res_PLN$model_par$Sigma
+  # B_zero<-res_init_ZI$B0
+  # Pi<-res_init_ZI$R
+  # S<-(res_init_ZI$S)
+  # S2<-(res_init_ZI$S)^2
+  # M<-res_init_ZI$M
+  # R<-res_init_ZI$R
+  # Omega<-n*solve((t(M-X%*%B)%*%(M-X%*%B))+diag(c(t(rep(1,nrow(Y)))%*%S2)))
+  # Sigma<-solve(Omega)
+  # X<-as.matrix(X)
+  # X_zero<-as.matrix(X_zero)
+  # Y<-as.matrix(Y)
+  # d<-ncol(X)
+  # n<-nrow(Y)
+
   params_init_E_step<-c(as.vector(M),as.vector(S),as.vector(R))
   # v <- res_PLN$model_par$B
   # #c(0.44844978, -0.08463290, -0.31860861, 0.50380695, 0.96334493, -0.18933897,
@@ -990,6 +1388,285 @@ SICZIPLN_optim<-function(X,Y,X_zero,offset=FALSE,lambda_fixed=log(n)*(ncol(X)),o
   data<-list(X=X,Y=Y,O=O,X_zero=X_zero)
   return(list(B=B,model_par=model_par,var_par=var_par,SICprediction=SICprediction,data=data,v_loglik=v_loglik,BIC_SICZIPLN=BIC_SICZIPLN,BIC_SICZIPLN_approximer=BIC_SICZIPLN_approximer,BIC_ZIPLN=BIC_ZIPLN,elbo=result_M_step$value,res_ZIPLN=res_PLN,ICL=ICL,ICL_approximer=ICL_approximer))
 }
+
+#' @export
+SICZIPLN_NLOPTR <- function(X, Y, X_zero, offset = FALSE,
+                            lambda_fixed = log(n) * (ncol(X)),
+                            optim_method = "NLOPT_LD_LBFGS",
+                            max_it = max_it,initialisation_method){
+
+  # ---- Petit mappage pour rester compatible avec les anciens noms optim() ----
+  # Si l'utilisateur passe encore "CG", "BFGS", "L-BFGS-B", "Nelder-Mead", etc.,
+  # on les convertit vers un algorithme nloptr equivalent. Comme des gradients
+  # analytiques (grad_E_step, grad_M_step) sont fournis, un algorithme basé
+  # gradient est privilégié par défaut.
+  .map_to_nloptr_algo <- function(method){
+    if (grepl("^NLOPT_", method)) return(method)   # déjà un nom nloptr valide
+    switch(method,
+           "CG"          = "NLOPT_LD_LBFGS",
+           "BFGS"        = "NLOPT_LD_LBFGS",
+           "L-BFGS-B"    = "NLOPT_LD_LBFGS",
+           "Nelder-Mead" = "NLOPT_LN_NELDERMEAD",
+           "NLOPT_LD_LBFGS")  # valeur par défaut
+  }
+  nloptr_algo <- .map_to_nloptr_algo(optim_method)
+
+  prep_pln <- prepare_data(Y, X)
+  Y <- prep_pln$Abundance
+  X <- prep_pln[, -c(1, length(prep_pln))]
+  p <- ncol(Y)
+  n <- nrow(X)
+  lambda <- lambda_fixed
+
+  if (offset) {
+    O <- matrix(rep(log(prep_pln$Offset), p), ncol = p, byrow = FALSE)
+  } else {
+    O <- matrix(0, nrow = n, ncol = p)
+  }
+
+  X      <- model.matrix(~., as.data.frame(X))
+  X_zero <- model.matrix(~., as.data.frame(X_zero))
+
+  # Choix de l'initialisation par ZIPLN ou LM (initialisation utilisé dans ZIPLN)
+
+  # ---- Initialisation ZIPLN (inchangé) ----
+  #
+  res_PLN <- ZIPLN(
+    Y ~ X[, -1] + offset(O[, 1]) | X_zero[, -1],
+    zi = "col",
+    control = ZIPLN_param(
+      config_optim = list(
+        algorithm ="CCSAQ",    # remplace CCSAQ par défaut
+        maxeval   = 2000,       # réduit la limite max d'itérations (défaut 10000)
+        ftol_rel  = 1e-6,       # tolérance moins stricte = arrêt plus rapide
+        xtol_rel  = 1e-4
+      ),
+      trace = 0                 # supprime les logs verbeux de PLNmodels (gain marginal mais utile)
+    )
+  )
+
+  res_init_ZI <- compute_ZIPLN_starting_point(Y = Y, X = X, X0 = X_zero, O = O, w = NULL)
+  if(initialisation_method=="LM"){
+    cat("***** Initialisation with LM *****", "\n")
+  B      <-res_init_ZI$B##res_PLN$model_par$B#res_PLN$model_par$B+rnorm(1)#res_init_ZI$B+rnorm(1)#
+  B_zero <-res_init_ZI$B0#  res_PLN$model_par$B0#
+  Pi     <- res_init_ZI$R #res_PLN$model_par$Pi#
+  S      <- res_init_ZI$S #res_PLN$var_par$S#
+  S2     <- S^2
+  M      <- res_init_ZI$M #res_PLN$var_par$M#
+  R      <- res_init_ZI$R #res_PLN$var_par$R#
+  } else  if(initialisation_method=="ZIPLN"){
+    cat("***** Initialisation with ZIPLN *****", "\n")
+    # res_ZISIC$res_ZIPLN$var_par$S
+    # res_ZISIC$res_ZIPLN$var_par$R
+    B      <-res_PLN$model_par$B#res_init_ZI$B#res_PLN$model_par$B#res_PLN$model_par$B+rnorm(1)#res_init_ZI$B+rnorm(1)#
+    B_zero <-  res_PLN$model_par$B0#-res_init_ZI$B0#
+    Pi     <- res_PLN$model_par$Pi#res_init_ZI$R #
+    S      <- res_PLN$var_par$S#res_init_ZI$S #
+    S2     <- S^2
+    M      <- res_PLN$var_par$M#res_init_ZI$M
+    R      <- res_PLN$var_par$R#res_init_ZI$R #
+
+  } else{
+    cat("***** Choose initialisation method between LM or ZIPLN *****", "\n")
+  }
+  # ---- Précalculs hors boucle (gain majeur) ----
+  X      <- as.matrix(X)
+  X_zero <- as.matrix(X_zero)
+  Y      <- as.matrix(Y)
+  d      <- ncol(X)
+  n      <- nrow(Y)
+  tX        <- t(X)
+  tX_zero   <- t(X_zero)
+  XtX       <- crossprod(X)                 # t(X) %*% X, une seule fois
+  XtX_inv_Xt <-solve(XtX) %*% tX
+  # XtX_chol  <- chol(XtX)
+  # XtX_inv_Xt <- chol2inv(XtX_chol) %*% tX    # remplace solve(t(X)%*%X)%*%t(X) à chaque itération
+
+
+  Omega <- omega_update(M, B, S2, X)
+  Sigma <- solve(Omega)#chol2inv(chol(Omega))
+
+  params_init_E_step <- c(as.vector(M), as.vector(S))
+  params_init_M_step <- c(B,B_zero)
+
+  # iter <- 0
+  # epsilon_val <- 0.00005
+  # lambda <- 0
+  length_epsilon<-100
+  E<-c()
+  e1<-10
+  E[1]<-e1
+  for(t in 2:length_epsilon){
+    E[t]=e1*(0.87)^(t-1)
+  }
+  iter<-0
+  ELBO_epsilon <- rep(NA, length_epsilon)
+  for(epsilon_val in E){
+    iter<-iter+1
+  v_loglik_tmp <- vloglik_col(X, Y, O, B, Sigma, Pi, R, M, S, X_zero, B_zero)
+  cat("SICZIPLN: Epsilon value for telescoping :\t", iter, epsilon_val, "\t", v_loglik_tmp, "\n")
+  ELBO_epsilon[iter]<-v_loglik_tmp
+  ELBO <- c(v_loglik_tmp, rep(NA, max_it))
+
+  for (i in 1:max_it) {
+
+    # ---- Wrappers locaux : évite les soucis de .checkfunargs() de nloptr ----
+    # On capture Y, X, O, R, B, Omega, X_zero, B_zero, lambda, epsilon_val
+    # directement depuis l'environnement de la boucle plutôt que de les
+    # repasser en arguments nommés à nloptr() (ce que nloptr valide plus
+    # strictement que optim()).
+    obj_E_wrap <- function(par) {
+      objective_E_step(par, Y = Y, X = X, O = O, R = R, B = B, Omega = Omega,
+                       X_zero = X_zero, B_zero = B_zero,
+                       lambda = lambda, epsilon = epsilon_val)
+    }
+    grad_E_wrap <- function(par) {
+      grad_E_step(par, Y = Y, X = X, O = O, R = R, B = B, Omega = Omega,
+                  X_zero = X_zero, B_zero = B_zero,
+                  lambda = lambda, epsilon = epsilon_val)
+    }
+
+    result_E_step <- nloptr(
+      x0 = params_init_E_step,
+      eval_f = obj_E_wrap,
+      eval_grad_f = grad_E_wrap,
+      opts = list(
+        algorithm = nloptr_algo,
+        maxeval   = 2000,
+        maxtime  = 200,
+        xtol_rel  = 1e-5,
+        xtol_abs  =0,
+        ftol_rel  = 1e-6,
+        ftol_abs  = 1e-6
+
+      )
+    )
+    cat("Status E-step:", result_E_step$status, result_E_step$message, "\n")
+    cat("objective E_step : ",result_E_step$objective,"\n")
+    M <- matrix(result_E_step$solution[1:(n * p)], n, p)
+    cat("sum of M : ",(sum(M)),"\n")
+    S <- matrix(result_E_step$solution[(n * p + 1):(2 * n * p)], n, p)
+    cat("sum of S: ",(sum(S)),"\n")
+    params_init_E_step <- c(as.vector(M), as.vector(S))
+
+    S2 <- S^2
+
+    A <- exp(O + M + 0.5 * S2)
+    R <- logistic(A + X_zero %*% B_zero) * dirac(Y)
+
+    Omega <- omega_update(M, B, S2, X)
+    # Sigma <- solve(Omega)#chol2inv(chol(Omega))
+
+    obj_M_wrap <- function(par) {
+      objective_M_step(par, Y = Y, X = X, O = O,
+                       Omega = Omega, B = B, M = M, S = S, R = R,
+                       X_zero = X_zero,
+                       lambda = lambda, epsilon = epsilon_val)
+    }
+    obj_M_wrap_with_grad_B<- function(par) {
+      objective_M_step_with_grad_B(par, Y = Y, X = X, O = O,
+                       Omega = Omega, M = M, S = S, R = R,
+                       X_zero = X_zero,
+                       lambda = lambda, epsilon = epsilon_val)
+    }
+    grad_M_wrap_with_grad_B <- function(par) {
+      objective_M_step_with_grad_B(par, Y = Y, X = X, O = O,
+                  Omega = Omega, M = M, S = S, R = R,
+                  X_zero = X_zero,
+                  lambda = lambda, epsilon = epsilon_val)
+    }
+# Avec mise à jour B non analytique
+    grad_M_wrap_with_grad_B <- function(par) {
+      grad_M_step_with_grad_B(par, Y = Y, X = X, O = O,
+                   Omega = Omega, M = M, S = S, R = R,
+                   X_zero = X_zero,
+                   lambda = lambda, epsilon = epsilon_val)
+    }
+    result_M_step <- nloptr(
+      x0 = params_init_M_step,
+      eval_f = obj_M_wrap_with_grad_B,
+      eval_grad_f = grad_M_wrap_with_grad_B,
+      opts = list(
+        algorithm = nloptr_algo,
+        maxeval   = 2000,
+        maxtime  = 200,
+        xtol_rel  = 1e-5,
+        xtol_abs  =0,
+        ftol_rel  =1e-6,
+        ftol_abs  =1e-6
+      )
+    )
+    cat("objective M_step : ",result_M_step$objective,"\n")
+    # ---- Mises à jour analytiques (accélérées) ----
+    B_old <- B
+    B  <- matrix(result_M_step$solution[1:(d*p)],d,p) #XtX_inv_Xt %*% M                  # plus de solve() recalculé ici
+    cat("sum of B : \n",sum((B)),"\n")
+    Omega <- omega_update(M, B, S2, X)
+    Sigma <- solve(Omega)#chol2inv(chol(Omega))
+
+    B_zero <- matrix(result_M_step$solution[((d*p)+1):length(result_M_step$solution)],d,p)#matrix(result_M_step$solution, d, p)
+    Pi=(1/(1+exp(-X_zero%*%B_zero)))
+    cat("sum of B_zero : ",(sum(B_zero)),"\n")
+    params_init_M_step <- c(B,B_zero)
+
+    ELBO[i + 1] <- vloglik_col(X, Y, O, B, Sigma, Pi, R, M, S, X_zero, B_zero)
+    # Test de la convergence
+    convergence <- sum(abs(B - B_old))
+    diff_ELBO   <- abs(ELBO[i] - ELBO[i + 1])
+    # cat("diff_ELBO : ", diff_ELBO, "\n")
+    # cat("convergence : ", convergence, "\n")
+    # if (convergence <= 1e-5 || diff_ELBO <= 1e-5) {
+      if (diff_ELBO <= 1e-5) {
+
+      cat("SICZIPLN:epsilon telescoping : ", epsilon_val, "Convergence avant maxit\n")
+      break
+    }
+  }
+}
+  # ---- Post-traitement (inchangé) ----
+    B[abs(B)<=1e-5]<-0
+  v_loglik_SICZIPLN_no_intercept   <- vloglik_col(X[, -1], Y, O, B[-1, ], Sigma, Pi, R, M, S, X_zero, B_zero)
+  v_loglik_SICZIPLN_with_intercept <- vloglik_col(X, Y, O, B, Sigma, Pi, R, M, S, X_zero, B_zero)
+  v_loglik_ZIPLN_no_intercept <- vloglik_col(X[, -1], Y, O, res_PLN$model_par$B[-1, ],
+                                             res_PLN$model_par$Sigma, res_PLN$model_par$Pi,
+                                             res_PLN$var_par$R, res_PLN$var_par$M, res_PLN$var_par$S,
+                                             X_zero, B_zero)
+
+  BIC_SICZIPLN_no_intercept <- v_loglik_SICZIPLN_with_intercept - (res_PLN$nb_param) * 0.5 * log(n)
+  BIC_SICZIPLN_approximer   <- v_loglik_SICZIPLN_with_intercept -
+    (res_PLN$nb_param - length(which(c(B[-1, ]) == 0))) * 0.5 * log(n)
+  BIC_SICZIPLN <- v_loglik_SICZIPLN_with_intercept - (res_PLN$nb_param) * 0.5 * log(n)
+  BIC_ZIPLN <- res_PLN$BIC
+
+  model_par <- list(B = B, Omega = Omega, Sigma = Sigma, Pi = Pi, B_zero = B_zero)
+  var_par   <- list(M = M, S = S, R = R, S2 = S^2)
+  v_loglik  <- list(
+    v_loglik_SICZIPLN_with_intercept = v_loglik_SICZIPLN_with_intercept,
+    v_loglik_SICZIPLN_no_intercept   = v_loglik_SICZIPLN_no_intercept,
+    v_loglik_ZIPLN_no_intercept      = v_loglik_ZIPLN_no_intercept,
+    v_loglik_ZIPLN_with_intercept    = res_PLN$loglik
+  )
+  SICprediction <- (1 - R) * exp(M + 0.5 * S^2)
+
+  entropy_ZI  <- -sum(xlogx(1 - R)) - sum(xlogx(R))
+  entropy_PLN <- .5 * (n * p * log(2 * pi * exp(1)) + sum(log(S^2)))
+  entropy     <- entropy_ZI + entropy_PLN
+  ICL_approximer <- BIC_SICZIPLN_approximer - entropy
+  ICL <- BIC_SICZIPLN_no_intercept - entropy
+
+  data <- list(X = X, Y = Y, O = O, X_zero = X_zero)
+
+  return(list(ELBO_epsilon=ELBO_epsilon,ELBO = na.omit(ELBO), res_init_ZI = res_init_ZI,
+              B = B, model_par = model_par, var_par = var_par,
+              SICprediction = SICprediction, data = data, v_loglik = v_loglik,
+              BIC_SICZIPLN_with_Intercept = BIC_SICZIPLN, BIC_SICZIPLN_approximer = BIC_SICZIPLN_approximer,
+              BIC_ZIPLN = BIC_ZIPLN, BIC_SICZIPLN_no_intercept = BIC_SICZIPLN_no_intercept,
+              elbo = result_M_step$objective, res_ZIPLN = res_PLN,
+              ICL = ICL, ICL_approximer = ICL_approximer
+  ))
+  }
+
 #####################################
 #' SIC-Regularized ZIPLN Model with Optional Grid Search
 #'
@@ -1064,7 +1741,7 @@ SICZIPLN_optim<-function(X,Y,X_zero,offset=FALSE,lambda_fixed=log(n)*(ncol(X)),o
 #' # fit_grid <- SICZIPLN(X, Y, X_zero, grid_search = TRUE)
 #'
 #' @export
-SICZIPLN<-function(X,Y,X_zero,offset=FALSE,lambda_fixed=(log(nrow(X))*ncol(X)),optim_method="BFGS",max_it=200,length_lambda=100,grid_search=FALSE){
+SICZIPLN<-function(X,Y,X_zero,offset=FALSE,lambda_fixed=(log(nrow(X))*ncol(X)),optim_method="BFGS",max_it=200,length_lambda=100,grid_search=FALSE,initialisation_method="LM"){
   prep_pln<-prepare_data(Y,X)
   p<-ncol(prep_pln$Abundance)
   n<-nrow(prep_pln$Abundance)
@@ -1074,7 +1751,8 @@ SICZIPLN<-function(X,Y,X_zero,offset=FALSE,lambda_fixed=(log(nrow(X))*ncol(X)),o
   if(offset==FALSE){
     O<-matrix(0,nrow=n,ncol=p)
   }
-  solution<-SICZIPLN_optim(X,Y,X_zero,offset=offset,lambda_fixed=log(nrow(X))*(ncol(X)),optim_method=optim_method,max_it=200)
+  # solution<-SICZIPLN_optim(X,Y,X_zero,offset=offset,lambda_fixed=log(nrow(X))*(ncol(X)),optim_method=optim_method,max_it=200)
+    solution<-SICZIPLN_NLOPTR(X,Y,X_zero,offset=offset,lambda_fixed=lambda_fixed,optim_method=optim_method,max_it=max_it,initialisation_method=initialisation_method)
   BIC_ZIPLN<-solution$res_ZIPLN$BIC
   if(grid_search==FALSE){
     solution<-solution
@@ -1117,7 +1795,8 @@ SICZIPLN<-function(X,Y,X_zero,offset=FALSE,lambda_fixed=(log(nrow(X))*ncol(X)),o
     # Paralléliser l'exécution de la boucle avec parLapply
     res_fs <- parLapply(cl, seq_lambda, function(lambda) {
       # Exécuter l'optimisation pour chaque valeur de lambda
-      result <- SICZIPLN_optim(X,Y,X_zero,offset=FALSE,lambda_fixed=lambda,optim_method=optim_method,max_it=200)
+      # result <- SICZIPLN_optim(X,Y,X_zero,offset=FALSE,lambda_fixed=lambda,optim_method=optim_method,max_it=200)
+      result <- SICZIPLN_NLOPTR(X,Y,X_zero,offset=FALSE,lambda_fixed=lambda,optim_method=optim_method,max_it=200)
       # Retourner le résultat et la valeur du BIC
       list(result = result, BIC= result[7],BIC_approximer = result[8])  # Assumons que le BIC est à la 10e position
     })
@@ -1143,4 +1822,13 @@ SICZIPLN<-function(X,Y,X_zero,offset=FALSE,lambda_fixed=(log(nrow(X))*ncol(X)),o
 
   }
   return(solution)
+}
+
+#' @export
+#'
+omega_update <- function(M, B, S2,X) {
+  ones_n    <- rep(1, n)
+  M_resid <- M - X %*% B
+  mat <- crossprod(M_resid) + diag(c(crossprod(ones_n, S2)))
+  n * chol2inv(chol(mat))                 # plus rapide + plus stable que solve()
 }
