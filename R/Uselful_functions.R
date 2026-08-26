@@ -1542,12 +1542,12 @@ SICZIPLN_NLOPTR <- function(X, Y, X_zero, offset = FALSE,
 
       )
     )
-    cat("Status E-step:", result_E_step$status, result_E_step$message, "\n")
-    cat("objective E_step : ",result_E_step$objective,"\n")
+    # cat("Status E-step:", result_E_step$status, result_E_step$message, "\n")
+    # cat("objective E_step : ",result_E_step$objective,"\n")
     M <- matrix(result_E_step$solution[1:(n * p)], n, p)
-    cat("sum of M : ",(sum(M)),"\n")
+    # cat("sum of M : ",(sum(M)),"\n")
     S <- matrix(result_E_step$solution[(n * p + 1):(2 * n * p)], n, p)
-    cat("sum of S: ",(sum(S)),"\n")
+    # cat("sum of S: ",(sum(S)),"\n")
     params_init_E_step <- c(as.vector(M), as.vector(S))
 
     S2 <- S^2
@@ -1558,24 +1558,24 @@ SICZIPLN_NLOPTR <- function(X, Y, X_zero, offset = FALSE,
     Omega <- omega_update(M, B, S2, X)
     # Sigma <- solve(Omega)#chol2inv(chol(Omega))
 
-    obj_M_wrap <- function(par) {
-      objective_M_step(par, Y = Y, X = X, O = O,
-                       Omega = Omega, B = B, M = M, S = S, R = R,
-                       X_zero = X_zero,
-                       lambda = lambda, epsilon = epsilon_val)
-    }
+    # obj_M_wrap <- function(par) {
+    #   objective_M_step(par, Y = Y, X = X, O = O,
+    #                    Omega = Omega, B = B, M = M, S = S, R = R,
+    #                    X_zero = X_zero,
+    #                    lambda = lambda, epsilon = epsilon_val)
+    # }
     obj_M_wrap_with_grad_B<- function(par) {
       objective_M_step_with_grad_B(par, Y = Y, X = X, O = O,
                        Omega = Omega, M = M, S = S, R = R,
                        X_zero = X_zero,
                        lambda = lambda, epsilon = epsilon_val)
     }
-    grad_M_wrap_with_grad_B <- function(par) {
-      objective_M_step_with_grad_B(par, Y = Y, X = X, O = O,
-                  Omega = Omega, M = M, S = S, R = R,
-                  X_zero = X_zero,
-                  lambda = lambda, epsilon = epsilon_val)
-    }
+    # grad_M_wrap_with_grad_B <- function(par) {
+    #   objective_M_step_with_grad_B(par, Y = Y, X = X, O = O,
+    #               Omega = Omega, M = M, S = S, R = R,
+    #               X_zero = X_zero,
+    #               lambda = lambda, epsilon = epsilon_val)
+    # }
 # Avec mise à jour B non analytique
     grad_M_wrap_with_grad_B <- function(par) {
       grad_M_step_with_grad_B(par, Y = Y, X = X, O = O,
@@ -1597,17 +1597,17 @@ SICZIPLN_NLOPTR <- function(X, Y, X_zero, offset = FALSE,
         ftol_abs  =1e-6
       )
     )
-    cat("objective M_step : ",result_M_step$objective,"\n")
+    # cat("objective M_step : ",result_M_step$objective,"\n")
     # ---- Mises à jour analytiques (accélérées) ----
     B_old <- B
     B  <- matrix(result_M_step$solution[1:(d*p)],d,p) #XtX_inv_Xt %*% M                  # plus de solve() recalculé ici
-    cat("sum of B : \n",sum((B)),"\n")
+    # cat("sum of B : \n",sum((B)),"\n")
     Omega <- omega_update(M, B, S2, X)
-    Sigma <- solve(Omega)#chol2inv(chol(Omega))
+    Sigma <- chol2inv(chol(Omega))
 
     B_zero <- matrix(result_M_step$solution[((d*p)+1):length(result_M_step$solution)],d,p)#matrix(result_M_step$solution, d, p)
-    Pi=(1/(1+exp(-X_zero%*%B_zero)))
-    cat("sum of B_zero : ",(sum(B_zero)),"\n")
+    Pi<-(1/(1+exp(-X_zero%*%B_zero)))
+    # cat("sum of B_zero : ",(sum(B_zero)),"\n")
     params_init_M_step <- c(B,B_zero)
 
     ELBO[i + 1] <- vloglik_col(X, Y, O, B, Sigma, Pi, R, M, S, X_zero, B_zero)
@@ -1624,8 +1624,31 @@ SICZIPLN_NLOPTR <- function(X, Y, X_zero, offset = FALSE,
     }
   }
 }
-  # ---- Post-traitement (inchangé) ----
+  # ---- Post-traitement ----
     B[abs(B)<=1e-5]<-0
+  if (!is.null(colnames(Y))) {
+    colnames(Omega)<-colnames(Y)
+    rownames(Omega)<-colnames(Y)
+    colnames(Sigma)<-colnames(Y)
+    rownames(Sigma)<-colnames(Y)
+    colnames(Pi)<-colnames(Y)
+    colnames(R)<-colnames(Y)
+    colnames(M)<-colnames(Y)
+    colnames(S)<-colnames(Y)
+    colnames(B)<-colnames(Y)
+    colnames(B_zero)<-colnames(Y)
+  }
+  if(!is.null(rownames(Y))) {
+    rownames(M)<-rownames(Y)
+    rownames(S)<-rownames(Y)
+  }
+  # X
+  if (!is.null(colnames(X))) {
+    rownames(B)<-colnames(X)
+  }
+  if (!is.null(colnames(X_zero))) {
+    rownames(B_zero)<-colnames(X_zero)
+  }
   v_loglik_SICZIPLN_no_intercept   <- vloglik_col(X[, -1], Y, O, B[-1, ], Sigma, Pi, R, M, S, X_zero, B_zero)
   v_loglik_SICZIPLN_with_intercept <- vloglik_col(X, Y, O, B, Sigma, Pi, R, M, S, X_zero, B_zero)
   v_loglik_ZIPLN_no_intercept <- vloglik_col(X[, -1], Y, O, res_PLN$model_par$B[-1, ],
