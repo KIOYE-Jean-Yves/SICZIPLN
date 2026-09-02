@@ -11,6 +11,7 @@ export(grad_M_step_a_supprimer)
 export(log_with_zero)
 export(logfactorial)
 export(logit)
+export(macth_nloptr_algo_name_with_algo_name_PLN)
 export(objective_E_step_a_supprimer)
 export(objective_M_step_a_supprimer)
 export(omega_update)
@@ -20,16 +21,22 @@ export(vloglik_col_old)
 export(vloglik_old)
 export(xlogx)
 importFrom(MASS,ginv)
-importFrom(PLNmodels,ZIPLN)
-importFrom(PLNmodels,prepare_data)
-importFrom(parallel,clusterEvalQ)
-importFrom(parallel,clusterExport)
-importFrom(parallel,detectCores)
-importFrom(parallel,makeCluster)
-importFrom(parallel,parLapply)
-importFrom(parallel,stopCluster)
-importFrom(stats,binomial)
-importFrom(stats,glm.fit)
-importFrom(stats,lm.fit)
-importFrom(stats,model.matrix)
-importFrom(stats,optim)
+importFrom(PLNmodels,
+  ZIPLN,
+  prepare_data
+)
+importFrom(parallel,
+  clusterEvalQ,
+  clusterExport,
+  detectCores,
+  makeCluster,
+  parLapply,
+  stopCluster
+)
+importFrom(stats,
+  binomial,
+  glm.fit,
+  lm.fit,
+  model.matrix,
+  optim
+)

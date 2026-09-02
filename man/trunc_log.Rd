@@ -18,12 +18,12 @@ logarithm of the truncated values.
 }
 \description{
 Computes the natural logarithm after truncating the input values
-to the interval . This prevents numerical issues
+to the interval \link[=`eps`, `1 - eps`]{\code{eps}, \code{1 - eps}}. This prevents numerical issues
 caused by values equal or very close to 0 or 1.
 }
 \details{
 Each element of \code{tens} is first truncated to the interval
- using:
+\link[=`eps`, `1 - eps`]{\code{eps}, \code{1 - eps}} using:
 \deqn{\max(\min(x, 1-\varepsilon), \varepsilon)}
 and the natural logarithm is then applied.
 

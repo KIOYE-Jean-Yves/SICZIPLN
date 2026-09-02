@@ -1207,7 +1207,7 @@ SICZIPLN_optim<-function(X,Y,X_zero,offset=FALSE,lambda_fixed=log(n)*(ncol(X)),o
   X_zero<-model.matrix(~.,as.data.frame(X_zero))
 
   # Initialisation ZIPLN
-   res_PLN<-ZIPLN_init <- ZIPLN(Y~X[,-1]+offset(O[,1])|X_zero[,-1], zi = "col")
+   res_PLN<-ZIPLN_init <- PLNmodels::ZIPLN(Y~X[,-1]+offset(O[,1])|X_zero[,-1], zi = "col")
   #
   #
   B<-res_PLN$model_par$B
@@ -1426,17 +1426,17 @@ SICZIPLN_NLOPTR <- function(X, Y, X_zero, offset = FALSE,
 
   X      <- model.matrix(~., as.data.frame(X))
   X_zero <- model.matrix(~., as.data.frame(X_zero))
-
+  ZIPLN_algo_name<- macth_nloptr_algo_name_with_algo_name_PLN(optim_method)
   # Choix de l'initialisation par ZIPLN ou LM (initialisation utilisé dans ZIPLN)
 
   # ---- Initialisation ZIPLN (inchangé) ----
   #
-  res_PLN <- ZIPLN(
+  res_PLN <- PLNmodels::ZIPLN(
     Y ~ X[, -1] + offset(O[, 1]) | X_zero[, -1],
     zi = "col",
     control = ZIPLN_param(
       config_optim = list(
-        algorithm ="CCSAQ",    # remplace CCSAQ par défaut
+        algorithm =ZIPLN_algo_name,    # remplace CCSAQ par défaut
         maxeval   = 2000,       # réduit la limite max d'itérations (défaut 10000)
         ftol_rel  = 1e-6,       # tolérance moins stricte = arrêt plus rapide
         xtol_rel  = 1e-4
@@ -1445,9 +1445,9 @@ SICZIPLN_NLOPTR <- function(X, Y, X_zero, offset = FALSE,
     )
   )
 
-  res_init_ZI <- compute_ZIPLN_starting_point(Y = Y, X = X, X0 = X_zero, O = O, w = NULL)
   if(initialisation_method=="LM"){
-    cat("***** Initialisation with LM *****", "\n")
+    cat("***** Initialisation with LM and ",optim_method," algorithm for the optimizer *****", "\n")
+    res_init_ZI <- compute_ZIPLN_starting_point(Y = Y, X = X, X0 = X_zero, O = O, w = NULL)
   B      <-res_init_ZI$B##res_PLN$model_par$B#res_PLN$model_par$B+rnorm(1)#res_init_ZI$B+rnorm(1)#
   B_zero <-res_init_ZI$B0#  res_PLN$model_par$B0#
   Pi     <- res_init_ZI$R #res_PLN$model_par$Pi#
@@ -1455,8 +1455,9 @@ SICZIPLN_NLOPTR <- function(X, Y, X_zero, offset = FALSE,
   S2     <- S^2
   M      <- res_init_ZI$M #res_PLN$var_par$M#
   R      <- res_init_ZI$R #res_PLN$var_par$R#
+  cat("*** Initialization is complete ***", "\n")
   } else  if(initialisation_method=="ZIPLN"){
-    cat("***** Initialisation with ZIPLN *****", "\n")
+    cat("***** Initialisation with ZIPLN and ",optim_method," algorithm for the optimizer *****", "\n")
     # res_ZISIC$res_ZIPLN$var_par$S
     # res_ZISIC$res_ZIPLN$var_par$R
     B      <-res_PLN$model_par$B#res_init_ZI$B#res_PLN$model_par$B#res_PLN$model_par$B+rnorm(1)#res_init_ZI$B+rnorm(1)#
@@ -1466,6 +1467,7 @@ SICZIPLN_NLOPTR <- function(X, Y, X_zero, offset = FALSE,
     S2     <- S^2
     M      <- res_PLN$var_par$M#res_init_ZI$M
     R      <- res_PLN$var_par$R#res_init_ZI$R #
+    cat("*** Initialization is complete ***", "\n")
 
   } else{
     cat("***** Choose initialisation method between LM or ZIPLN *****", "\n")
@@ -1502,10 +1504,19 @@ SICZIPLN_NLOPTR <- function(X, Y, X_zero, offset = FALSE,
   }
   iter<-0
   ELBO_epsilon <- rep(NA, length_epsilon)
+  # cat("*** Epsilon telescoping procedure... ***", "\n")
+  # Barre de progression
+  pb <- progress::progress_bar$new(
+    format = "  Epsilon telescoping procedure [:bar] :percent",
+    total = length_epsilon,
+    clear = FALSE,
+    width = 80
+  )
+
   for(epsilon_val in E){
     iter<-iter+1
   v_loglik_tmp <- vloglik_col(X, Y, O, B, Sigma, Pi, R, M, S, X_zero, B_zero)
-  cat("SICZIPLN: Epsilon value for telescoping :\t", iter, epsilon_val, "\t", v_loglik_tmp, "\n")
+  # cat("SICZIPLN: Epsilon value for telescoping :\t", iter, epsilon_val, "\t", v_loglik_tmp, "\n")
   ELBO_epsilon[iter]<-v_loglik_tmp
   ELBO <- c(v_loglik_tmp, rep(NA, max_it))
 
@@ -1613,16 +1624,19 @@ SICZIPLN_NLOPTR <- function(X, Y, X_zero, offset = FALSE,
     ELBO[i + 1] <- vloglik_col(X, Y, O, B, Sigma, Pi, R, M, S, X_zero, B_zero)
     # Test de la convergence
     convergence <- sum(abs(B - B_old))
-    diff_ELBO   <- abs(ELBO[i] - ELBO[i + 1])
+    diff_ELBO   <- abs(ELBO[i] - ELBO[i + 1])/(abs(ELBO[i]) + 1e-8)
     # cat("diff_ELBO : ", diff_ELBO, "\n")
     # cat("convergence : ", convergence, "\n")
     # if (convergence <= 1e-5 || diff_ELBO <= 1e-5) {
-      if (diff_ELBO <= 1e-5) {
+      if (diff_ELBO <= 1e-8) {
 
-      cat("SICZIPLN:epsilon telescoping : ", epsilon_val, "Convergence avant maxit\n")
+      # cat("SICZIPLN:epsilon telescoping : ", epsilon_val, "Convergence avant maxit\n")
       break
     }
   }
+  # Affichage de la barre de progression
+  # Sys.sleep(0.05)
+  pb$tick()
 }
   # ---- Post-traitement ----
     B[abs(B)<=1e-5]<-0
@@ -1680,7 +1694,7 @@ SICZIPLN_NLOPTR <- function(X, Y, X_zero, offset = FALSE,
 
   data <- list(X = X, Y = Y, O = O, X_zero = X_zero)
 
-  return(list(ELBO_epsilon=ELBO_epsilon,ELBO = na.omit(ELBO), res_init_ZI = res_init_ZI,
+  return(list(ELBO_epsilon=ELBO_epsilon,ELBO = na.omit(ELBO),
               B = B, model_par = model_par, var_par = var_par,
               SICprediction = SICprediction, data = data, v_loglik = v_loglik,
               BIC_SICZIPLN_with_Intercept = BIC_SICZIPLN, BIC_SICZIPLN_approximer = BIC_SICZIPLN_approximer,
@@ -1850,8 +1864,26 @@ SICZIPLN<-function(X,Y,X_zero,offset=FALSE,lambda_fixed=(log(nrow(X))*ncol(X)),o
 #' @export
 #'
 omega_update <- function(M, B, S2,X) {
+  n<-nrow(X)
   ones_n    <- rep(1, n)
   M_resid <- M - X %*% B
   mat <- crossprod(M_resid) + diag(c(crossprod(ones_n, S2)))
   n * chol2inv(chol(mat))                 # plus rapide + plus stable que solve()
+}
+
+#' @export
+#'
+macth_nloptr_algo_name_with_algo_name_PLN<-function(algo){
+  Supported_algo<-c("NLOPT_LD_LBFGS","NLOPT_LD_MMA","NLOPT_LD_CCSAQ","NLOPT_LD_VAR1","NLOPT_LD_VAR2","NLOPT_LD_TNEWTON","NLOPT_LD_TNEWTON_RESTART","NLOPT_LD_TNEWTON_PRECOND","NLOPT_LD_TNEWTON_PRECOND_RESTART")
+  if(algo=="NLOPT_LD_LBFGS"){algo_PLN<-"LBFGS"}
+  if(algo=="NLOPT_LD_VAR1"){algo_PLN<-"VAR1"}
+  if(algo=="NLOPT_LD_VAR2"){algo_PLN<-"VAR2"}
+  if(algo=="NLOPT_LD_TNEWTON"){algo_PLN<-"TNEWTON"}
+  if(algo=="NLOPT_LD_TNEWTON_RESTART"){algo_PLN<-"TNEWTON_RESTART"}
+  if(algo=="NLOPT_LD_TNEWTON_PRECOND"){algo_PLN<-"TNEWTON_PRECOND"}
+  if(algo=="NLOPT_LD_TNEWTON_PRECOND_RESTART"){algo_PLN<-"TNEWTON_PRECOND_RESTART"}
+  if(algo=="NLOPT_LD_MMA"){algo_PLN<-"MMA"}
+  if(algo=="NLOPT_LD_CCSAQ"){algo_PLN<-"CCSAQ"}
+  if(!(algo%in%Supported_algo)){cat("Choose an algorithm name in : \n ",Supported_algo)}
+  return(algo_PLN)
 }

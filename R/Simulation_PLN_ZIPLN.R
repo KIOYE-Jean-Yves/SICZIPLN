@@ -25,7 +25,7 @@ rZIPLN <- function(n     = 200,
   # adjust depths
   exp_depths <-rowSums(exp(rep(1, n) %o% diag(Sigma)/2 + mu)) ## sample-wise expected depths
   offsets <- 0#log(depths %o% rep(1, p)) - log(exp_depths) #log(1+matrix(rep(depths,p),n,p))
-  Z <- mu + mvrnorm(n, rep(0, ncol(Sigma)), as.matrix(Sigma)) + offsets
+  Z <- mu + MASS::mvrnorm(n, rep(0, ncol(Sigma)), as.matrix(Sigma)) + offsets
   W <- matrix(rbinom(n * p, 1,  prob = Pi), n, p)
   Y <- matrix(rpois(n * p, as.vector(exp(Z))), n, p) * (1 - W)
   dimnames(Y) <- list(paste0("S", 1:n), paste0("Y", 1:p))
