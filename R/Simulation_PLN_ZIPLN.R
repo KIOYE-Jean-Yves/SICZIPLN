@@ -59,6 +59,8 @@ Generation_matrice_B_control_entree_zero<-function(ncol_covar=6,ncol_especes=4,p
   zero_entry<-sample(1:taille_B,proprortion_zero*taille_B)
   B_star[zero_entry]<-0
   B_star  <- matrix(B_star,ncol=ncol_especes,nrow=ncol_covar,byrow = TRUE)
+  # Mettre 1 pour les intercepts
+  B_star<-rbind(rep(1,ncol_especes),B_star)
   return(B_star)
 }
 
@@ -174,6 +176,18 @@ sparsity_recognition<-function(vrai_beta, beta_estime){
 #   - structure_dependance ("full", ou "diag") : Structure de dependance souhaité. Si structure_dependance="full" un matrice de covariance pleine est géneré, si structure_dependance="diag" un matrice de covariance diagonale est généré.
 # Retour :
 #   Sigma: matrice de covariance
+#   Sigma: matrice de covariance
+generate_Sigma_toeplitz_structure<-function(p,structure_dependance=0.5){
+  sd <- sqrt(sample.int(5, p, replace = TRUE))
+  Sigma_star <- diag(sd) %*% toeplitz(structure_dependance^(1:p - 1)) %*% diag(sd)
+  rownames(Sigma_star)<-paste0("species_",1:dim(Sigma_star)[1])
+  colnames(Sigma_star)<-paste0("species_",1:dim(Sigma_star)[1])
+  # if(structure_dependance=="diag"){
+  #   mcov=matrix(runif(p*p,-1,1),p,p)#1
+  #   Sigma_star=diag(diag((mcov%*%t(mcov))))
+  # }
+  return(Sigma_star)
+}
 generate_Sigma<-function(p,structure_dependance="full"){
   if(structure_dependance=="full"){
     mcov=matrix(runif(p*p,-1,1),p,p)#1

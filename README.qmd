@@ -1,0 +1,156 @@
+---
+format: gfm
+execute:
+  echo: true
+  warning: false
+  message: false
+knitr:
+  opts_chunk:
+    collapse: true
+    comment: "#>"
+    fig.path: "man/figures/README-"
+    out.width: "100%"
+---
+
+# Sparse Poisson Log Normal Model for Zero-Inflated Multivariate Count Data
+
+## Description
+This repository contains R source for implementing the analysis described in the article "Sparse Poisson Log Normal Model for Zero-Inflated Multivariate Count Data". 
+The analysis focuses on variable selection and on providing useful/interpretable graphical outputs.
+
+## Features
+- Implementation of the smooth information criterion in the zero-inflated Poisson log-normal model.
+- Pipeline analysis: modify the data file paths in the scripts to analyze different datasets.
+- Demonstration scripts: show how to perform the entire analysis, including data preprocessing, model fitting, and extracting graphical results.
+
+## Usage
+
+### Installation
+
+Install the development version from GitHub:
+
+```{r}
+# [GitHub](https://github.com/kioye-jean-yves/SICZIPLN):
+# install.packages("pak")
+# pak::pak("kioye-jean-yves/SICZIPLN")
+```
+
+### Illustration
+
+We illustrate variable selection on simulated data according to the ZIPLN model, `data_ZIPLN_simulation`, with fixed parameters.
+
+```{r}
+library(SICZIPLN)
+data(data_ZIPLN_simulation)
+```
+
+The fixed parameters for the simulation are:
+
+```{r}
+# Matrix of variance-covariance
+data_ZIPLN_simulation$Sigma_simulatation
+```
+
+```{r}
+# Coefficient matrix in the PLN part
+data_ZIPLN_simulation$B_simulatation
+```
+
+```{r}
+# Coefficient matrix in the Zero-Inflation part
+data_ZIPLN_simulation$B0_simulatation
+```
+
+The simulated data contain 1000 observations, 5 count variables (species), and 6 covariates including the intercept, both in the PLN part and in the zero-inflation part.
+
+```{r}
+Y <- data_ZIPLN_simulation$Y
+dim(Y)
+head(Y)
+```
+
+```{r}
+X <- data_ZIPLN_simulation$X
+dim(X)
+head(X)
+```
+
+```{r}
+X_zero <- data_ZIPLN_simulation$X_zero
+dim(X_zero)
+head(X_zero)
+```
+
+#### SICZIPLN based on a fixed regularization level
+
+A single, fixed regularization level (e.g. the SIC default, $\lambda = \log n$), fit directly.
+
+`optim_method`: allows you to choose the optimization algorithm for the `nloptr` optimizer. The default is `NLOPT_LD_LBFGS`. Supported algorithms include `NLOPT_LD_MMA`, `NLOPT_LD_CCSAQ`, `NLOPT_LD_VAR1`, `NLOPT_LD_VAR2`, `NLOPT_LD_TNEWTON`, `NLOPT_LD_TNEWTON_RESTART`, `NLOPT_LD_TNEWTON_PRECOND`, and `NLOPT_LD_TNEWTON_PRECOND_RESTART`.
+
+`initialisation_method`: choice of starting parameters for `SICZIPLN`, either from `ZIPLN` or from `LM`.
+
+```{r,message=TRUE,warning=TRUE}
+fit_SICZIPLN <- SICZIPLN(X = X[, -1], Y = Y, X_zero = X_zero[, -1],
+                          lambda_fixed = log(nrow(X)),
+                          grid_search = FALSE,
+                          optim_method = "NLOPT_LD_LBFGS",
+                          initialisation_method = "ZIPLN")
+# Estimated covariates coefficient matrix in PLN part
+fit_SICZIPLN$model_par$B
+# Estimated precision matrix in PLN part
+fit_SICZIPLN$model_par$Omega
+# Estimated covariates coefficient matrix in ZI part
+fit_SICZIPLN$model_par$B_zero
+```
+
+#####  Estimated covariate coefficient (penalized) matrix in the PLN part
+```{r}
+fit_SICZIPLN$model_par$B
+```
+
+#####  Plot of Estimated covariate coefficient (penalized) matrix in the PLN part
+
+```{r}
+library(ggplot2)
+library( ggpattern)
+library( reshape2)
+coef_graph<-SICZIPLN::coef_plot_barre(fit_SICZIPLN$model_par$B,
+                            nom_axes = c("Columns of Y", "Variables",
+                                         "Coefficients value", "SICZIPLN"),
+                            grad_echelle = c(-5, 5))
+coef_graph
+```
+
+#####  Estimated precision matrix (unpenalized) in PLN part
+```{r}
+fit_SICZIPLN$model_par$Omega
+```
+
+#####  Estimated covariates coefficient (unpenalized) matrix in ZI part
+```{r}
+fit_SICZIPLN$model_par$B_zero
+```
+
+#### SICZIPLN based on a grid of regularization levels
+
+`grid_search = TRUE`: explore a grid of penalties in parallel and select the best one by BIC.
+
+```{r}
+# #| cache: true
+# fit_grid_SICZIPLN <- SICZIPLN(X = X[, -1], Y = Y, X_zero = X_zero[, -1],
+#                                grid_search = TRUE, length_lambda = 100,
+#                                optim_method = "NLOPT_LD_LBFGS")
+# fit_grid_SICZIPLN$best_lambda
+```
+
+```{r}
+
+```
+
+## Author
+[Kioye Togo Jean Yves](https://github.com/kioye-jean-yves/)
+
+## License
+This project is licensed under a [Creative Commons License](https://creativecommons.org/) allowing free reuse of the research work.
+
+## References

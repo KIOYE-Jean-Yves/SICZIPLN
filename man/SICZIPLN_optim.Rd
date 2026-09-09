@@ -2,7 +2,7 @@
 % Please edit documentation in R/Uselful_functions.R
 \name{SICZIPLN_optim}
 \alias{SICZIPLN_optim}
-\title{Optimization of the SIC-ZIPLN Model via Variational EM}
+\title{Optimization of the SICZIPLN Model via Variational EM}
 \usage{
 SICZIPLN_optim(
   X,
@@ -24,8 +24,8 @@ SICZIPLN_optim(
 
 \item{offset}{Logical; if \code{TRUE}, offsets are included in the model.}
 
-\item{optim_method}{Optimization method passed to \code{optim}
-(e.g., \code{"BFGS"}).}
+\item{optim_method}{Optimization method passed to \code{nloptr}
+(e.g., \code{"NLOPT_LD_LBFGS","NLOPT_LD_MMA","NLOPT_LD_CCSAQ","NLOPT_LD_VAR1","NLOPT_LD_VAR2","NLOPT_LD_TNEWTON","NLOPT_LD_TNEWTON_RESTART","NLOPT_LD_TNEWTON_PRECOND","NLOPT_LD_TNEWTON_PRECOND_RESTART"}).}
 
 \item{max_it}{Maximum number of EM iterations per epsilon level.}
 
@@ -39,16 +39,16 @@ A list containing:
 \item \code{model_par} list of model parameters (\code{B}, \code{Omega},
 \code{Sigma}, \code{Pi}, \code{B_zero}),
 \item \code{var_par} variational parameters (\code{M}, \code{S}, \code{R}),
-\item \code{SICprediction} predicted latent intensities,
+\item \code{SICprediction} predicted data,
 \item \code{data} original data used in the model,
-\item \code{v_loglik} log-likelihood and ELBO diagnostics for different models,
-\item \code{BIC_SICZIPLN} Bayesian Information Criterion for SIC-ZIPLN,
-\item \code{BIC_SICZIPLN_approximer} BIC with sparsity approximation,
+\item \code{v_loglik} ELBO,
+\item \code{BIC_SICZIPLN} BIC for SICZIPLN,
+\item \code{BIC_SICZIPLN_approximer} BIC for SICZIPLN by excluding the number of null coeffients from the number of parameters,
 \item \code{BIC_ZIPLN} BIC of the non-penalized ZIPLN model,
 \item \code{elbo} final ELBO value,
 \item \code{res_ZIPLN} fitted ZIPLN initialization model,
-\item \code{ICL} Integrated Completed Likelihood approximation,
-\item \code{ICL_approximer} alternative ICL approximation
+\item \code{ICL} Integrated Completed Likelihood approximation for SICZIPLN,
+\item \code{ICL_approximer} alternative ICL by excluding the number of null coeffients from the number of parameters
 }
 }
 \description{
@@ -64,13 +64,11 @@ The algorithm is based on a variational EM framework:
 \item E-step: updates variational parameters (\code{M}, \code{S}, \code{R})
 by maximizing the ELBO using gradient-based optimization.
 \item M-step: updates model parameters (\code{B}, \code{B_zero}) under
-SIC-type sparsity penalization.
+SIC-type penalization.
 }
 
 A telescoping annealing scheme is used on \code{epsilon} to stabilize
 optimization and gradually enforce sparsity.
-
-Model selection is performed using BIC and ICL criteria.
 }
 \note{
 The function relies on an initial fit obtained from a ZIPLN model
@@ -79,6 +77,6 @@ regression coefficients.
 }
 \examples{
 # Example (pseudo-code)
-# fit <- SICZIPLN_optim(X, Y, X_zero)
+# fit <- SICZIPLN_NLOPTR(X, Y, X_zero)
 
 }

@@ -2,7 +2,7 @@
 % Please edit documentation in R/Uselful_functions.R
 \name{SICZIPLN}
 \alias{SICZIPLN}
-\title{SIC-Regularized ZIPLN Model with Optional Grid Search}
+\title{SIC-Regularized ZIPLN Model with Optional Grid Search or lambda}
 \usage{
 SICZIPLN(
   X,
@@ -30,21 +30,19 @@ SICZIPLN(
 \item{lambda_fixed}{Fixed value of the SIC regularization parameter.
 Default is \code{log(n) * ncol(X)}.}
 
-\item{optim_method}{Optimization method passed to \code{optim}
-(e.g., \code{"BFGS"}).}
+\item{optim_method}{Optimization method passed to \code{nloptr}
+(e.g., \code{"NLOPT_LD_LBFGS","NLOPT_LD_MMA","NLOPT_LD_CCSAQ","NLOPT_LD_VAR1","NLOPT_LD_VAR2","NLOPT_LD_TNEWTON","NLOPT_LD_TNEWTON_RESTART","NLOPT_LD_TNEWTON_PRECOND","NLOPT_LD_TNEWTON_PRECOND_RESTART"}).}
 
 \item{max_it}{Maximum number of EM iterations used in the optimization
 procedure.}
 
-\item{length_lambda}{Number of grid points used for lambda search when
-\code{grid_search = TRUE}.}
+\item{length_lambda}{Number of lambda value.}
 
 \item{grid_search}{Logical; if \code{TRUE}, performs a parallel grid search
 over a range of \code{lambda} values and returns all fitted models.}
 }
 \value{
-If \code{grid_search = FALSE}, returns a fitted SIC-ZIPLN model
-as a list (output of \code{SICZIPLN_optim}).
+If \code{grid_search = FALSE}, returns a fitted SICZIPLN model with fixed value of lambda to log(n).
 
 If \code{grid_search = TRUE}, returns a list containing:
 \itemize{
@@ -56,11 +54,7 @@ If \code{grid_search = TRUE}, returns a list containing:
 }
 }
 \description{
-Fits a Sparse Information Criterion (SIC) penalized
-Zero-Inflated Poisson Log-Normal (ZIPLN) model using a variational EM
-algorithm. The procedure estimates model parameters and variational
-parameters jointly, and optionally performs a grid search over the
-regularization parameter \code{lambda}.
+Fits the \code{SICZIPLN_NLOPTR} function with optional grid values of lambda using parallel programming.
 }
 \details{
 The function operates in two modes:
@@ -86,7 +80,7 @@ independent model fits across multiple CPU cores.
 \note{
 This function depends on:
 \itemize{
-\item \code{SICZIPLN_optim} (main optimizer),
+\item \code{SICZIPLN_NLOPTR} (main optimizer),
 \item \code{prepare_data},
 \item the \code{parallel} package.
 }
